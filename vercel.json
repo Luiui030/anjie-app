@@ -1,7 +1,12 @@
 {
-  "public": "public",
-  "routes": [
-    { "src": "/api/jobs", "dest": "/api/jobs.js" },
-    { "src": "/(.*)", "dest": "/public/index.html" }
+  "rewrites": [
+    { "source": "/api/jobs", "destination": "/api/jobs.js" },
+    { "source": "/(.*)", "destination": "/public/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+    }
   ]
 }
