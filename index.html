@@ -4,530 +4,361 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
   <title>安潔國際 - 工程記帳</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap" rel="stylesheet"/>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html { font-size: 16px; -webkit-text-size-adjust: 100%; }
-    body { background: #0f172a; font-family: 'Noto Sans TC', sans-serif; color: #e2e8f0; overscroll-behavior-y: contain; }
-    input, select, textarea, button { font-family: inherit; -webkit-appearance: none; appearance: none; }
-    input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
-    input:focus, select:focus { outline: none; border-color: #38bdf8 !important; }
-    textarea { resize: vertical; }
-    select option { background: #1e293b; }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0f172a;font-family:'Noto Sans TC',sans-serif;color:#e2e8f0}
+    input,select,textarea,button{font-family:inherit;-webkit-appearance:none;appearance:none}
+    input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+    input:focus,select:focus{outline:none;border-color:#38bdf8!important}
+    textarea{resize:vertical}
+    select option{background:#1e293b}
   </style>
 </head>
 <body>
-  <div id="root"></div>
-  <script type="text/babel">
-    const { useState, useRef, useMemo, useEffect } = React;
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const {useState,useEffect,useRef} = React;
 
-    const CATS   = ["材料", "人工", "交通", "耗材", "其他"];
-    const STATUS = ["待收", "部分", "完收"];
-    const SC     = { 待收: "#f59e0b", 部分: "#60a5fa", 完收: "#34d399" };
+const CATS = ["材料","人工","交通","耗材","其他"];
+const STATUS = ["待收","部分","完收"];
+const SC = {"待收":"#f59e0b","部分":"#60a5fa","完收":"#34d399"};
 
-    const uid   = () => Math.random().toString(36).slice(2, 9);
-    const fmt   = (n) => Number(n || 0).toLocaleString("zh-TW");
-    const tod   = () => new Date().toISOString().slice(0, 10);
-    const xpTot = (job) => job.exps.reduce((s, e) => s + +e.amt, 0);
-    const prof  = (job) => +job.received - xpTot(job);
+function uid(){return Math.random().toString(36).slice(2,9)}
+function fmt(n){return Number(n||0).toLocaleString("zh-TW")}
+function today(){return new Date().toISOString().slice(0,10)}
+function xp(job){return (job.exps||[]).reduce((s,e)=>s+ +e.amt,0)}
 
-    async function apiLoad() {
-      const r = await fetch("/api/jobs");
-      if (!r.ok) throw new Error("載入失敗");
-      const data = await r.json();
-      return Array.isArray(data) ? data : [];
-    }
-    async function apiSave(jobs) {
-      const r = await fetch("/api/jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobs })
-      });
-      if (!r.ok) throw new Error("儲存失敗");
-    }
+async function load(){
+  try{
+    const r=await fetch("/api/jobs");
+    const d=await r.json();
+    return Array.isArray(d)?d:[];
+  }catch(e){return []}
+}
+async function save(jobs){
+  try{
+    await fetch("/api/jobs",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jobs})});
+  }catch(e){}
+}
 
-    function JobCard({ job, onUpdate, onDelete, addExp, setAddExp }) {
-      const [open, setOpen] = useState(false);
-      const [del, setDel]   = useState(false);
-      const expTotal = xpTot(job);
-      const profit   = prof(job);
+function App(){
+  const [jobs,setJobsRaw]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [syncing,setSyncing]=useState(false);
+  const [tab,setTab]=useState("總覽");
+  const [adding,setAdding]=useState(false);
+  const [draft,setDraft]=useState(null);
+  const [open,setOpen]=useState(null);
+  const [filter,setFilter]=useState("全部");
+  const [addExp,setAddExp]=useState({cat:"材料",desc:"",amt:"",qty:"",unitPrice:""});
+  const nameRef=useRef();
 
-      return (
-        <div style={S.card}>
-          <div style={S.cardHead} onClick={() => { setOpen(o => !o); setDel(false); }}>
-            <div style={S.cardL}>
-              <div style={S.cardName}>{job.name}</div>
-              <div style={S.cardMeta}>{job.client}{job.client ? " · " : ""}{job.date}</div>
-            </div>
-            <div style={S.cardR}>
-              <span style={{ ...S.badge, background: SC[job.status] + "28", color: SC[job.status] }}>{job.status}</span>
-              <span style={{ ...S.pchip, color: profit >= 0 ? "#34d399" : "#f87171", background: profit >= 0 ? "#34d39918" : "#f8717118" }}>
-                {profit >= 0 ? "+" : "−"}${fmt(Math.abs(profit))}
-              </span>
-              <span style={{ ...S.chev, transform: open ? "rotate(90deg)" : "none" }}>›</span>
+  useEffect(()=>{
+    load().then(d=>{setJobsRaw(d);setLoading(false)});
+    const t=setInterval(()=>load().then(d=>setJobsRaw(d)),15000);
+    return()=>clearInterval(t);
+  },[]);
+
+  function setJobs(fn){
+    setJobsRaw(prev=>{
+      const next=typeof fn==="function"?fn(prev):fn;
+      setSyncing(true);
+      save(next).finally(()=>setSyncing(false));
+      return next;
+    });
+  }
+
+  function startAdd(){
+    setDraft({id:uid(),name:"",client:"",date:today(),quote:"",received:"",status:"待收",exps:[],note:""});
+    setAdding(true);setTab("工單");
+    setTimeout(()=>nameRef.current&&nameRef.current.focus(),100);
+  }
+  function saveJob(){
+    if(!draft.name.trim()){nameRef.current&&nameRef.current.focus();return}
+    setJobs(p=>[{...draft},...p]);
+    setAdding(false);setDraft(null);
+  }
+
+  function updateJob(id,patch){setJobs(p=>p.map(j=>j.id===id?{...j,...patch}:j))}
+  function deleteJob(id){setJobs(p=>p.filter(j=>j.id!==id));setOpen(null)}
+
+  function addExpense(jobId){
+    let amt=addExp.amt;
+    if(addExp.cat==="人工"){
+      if(!addExp.qty||!addExp.unitPrice)return;
+      amt=String(+addExp.qty * +addExp.unitPrice);
+    }else{if(!amt)return}
+    const e={id:uid(),cat:addExp.cat,desc:addExp.desc,amt,qty:addExp.qty,unitPrice:addExp.unitPrice};
+    setJobs(p=>p.map(j=>j.id===jobId?{...j,exps:[...(j.exps||[]),e]}:j));
+    setAddExp(p=>({...p,desc:"",amt:"",qty:"",unitPrice:""}));
+  }
+  function removeExp(jobId,eid){
+    setJobs(p=>p.map(j=>j.id===jobId?{...j,exps:(j.exps||[]).filter(e=>e.id!==eid)}:j));
+  }
+
+  const safeJobs=Array.isArray(jobs)?jobs:[];
+  const tQ=safeJobs.reduce((s,j)=>s+ +j.quote,0);
+  const tI=safeJobs.reduce((s,j)=>s+ +j.received,0);
+  const tO=safeJobs.reduce((s,j)=>s+xp(j),0);
+  const tP=tI-tO;
+  const tPend=safeJobs.filter(j=>j.status!=="完收").reduce((s,j)=>s+Math.max(0,+j.quote- +j.received),0);
+  const filtered=filter==="全部"?safeJobs:safeJobs.filter(j=>j.status===filter);
+
+  if(loading)return React.createElement("div",{style:{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:14}},
+    React.createElement("div",{style:{fontSize:40}},"🧹"),
+    React.createElement("div",{style:{color:"#475569"}},"載入中…")
+  );
+
+  return (
+    <div style={{minHeight:"100dvh",background:"#0f172a",paddingBottom:40,maxWidth:480,margin:"0 auto"}}>
+      {/* Header */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px 12px",borderBottom:"1px solid #1e293b",position:"sticky",top:0,background:"#0f172a",zIndex:20}}>
+        <div>
+          <div style={{fontSize:15,fontWeight:900,color:"#f1f5f9"}}>安潔國際有限公司</div>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}>
+            <div style={{fontSize:10,color:"#475569"}}>工程記帳系統</div>
+            <div style={{fontSize:10,borderRadius:20,padding:"2px 7px",fontWeight:600,...(syncing?{background:"#f59e0b22",color:"#f59e0b"}:{background:"#34d39922",color:"#34d399"})}}>
+              {syncing?"⟳ 同步中":"● 已同步"}
             </div>
           </div>
-
-          {open && (
-            <div style={S.cardBody}>
-              <div style={S.pbox}>
-                <Pr label="報價金額" val={+job.quote}    c="#cbd5e1" />
-                <Pr label="已收款"   val={+job.received} c="#34d399" />
-                <Pr label="總支出"   val={expTotal}      c="#f87171" minus />
-                <div style={{ height: 1, background: "#1e293b", margin: "8px 0" }} />
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 13, color: "#94a3b8" }}>淨利潤</span>
-                  <span style={{ fontSize: 20, fontWeight: 900, color: profit >= 0 ? "#34d399" : "#fb923c" }}>
-                    {profit >= 0 ? "+" : "−"}${fmt(Math.abs(profit))}
-                  </span>
-                </div>
-                {+job.quote > 0 && (
-                  <div style={{ textAlign: "right", fontSize: 11, color: "#475569", marginTop: 3 }}>
-                    利潤率 {Math.round(profit / +job.quote * 100)}%
-                    {+job.quote > +job.received && <span style={{ marginLeft: 8, color: "#f59e0b" }}>待收 ${fmt(+job.quote - +job.received)}</span>}
-                  </div>
-                )}
-              </div>
-
-              <div style={S.row2}>
-                <Lbl t="報價金額 $"><input style={{ ...S.inp, ...S.inpSm }} type="number" inputMode="numeric" value={job.quote} onChange={e => onUpdate({ quote: e.target.value })} /></Lbl>
-                <Lbl t="已收款 $"><input style={{ ...S.inp, ...S.inpSm }} type="number" inputMode="numeric" value={job.received} onChange={e => onUpdate({ received: e.target.value })} /></Lbl>
-              </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-                {STATUS.map(st => (
-                  <div key={st} style={{ ...S.stBtn, ...(job.status === st ? { background: SC[st] + "30", color: SC[st], borderColor: SC[st] } : {}) }}
-                    onClick={() => onUpdate({ status: st })}>{st}</div>
-                ))}
-              </div>
-
-              <div style={S.expSec}>
-                <div style={S.expHdr}>📌 費用明細</div>
-                {job.exps.length === 0 && <div style={{ fontSize: 12, color: "#334155", padding: "4px 0 8px" }}>尚無費用記錄</div>}
-                {job.exps.map(e => (
-                  <div key={e.id} style={S.expLine}>
-                    <span style={S.expCat}>{e.cat}</span>
-                    <span style={S.expDesc}>{e.cat === "人工" && e.qty && e.unitPrice ? `${e.desc ? e.desc + "・" : ""}${e.qty}人 × $${fmt(e.unitPrice)}` : e.desc || "—"}</span>
-                    <span style={S.expAmt}>${fmt(e.amt)}</span>
-                    <div style={{ color: "#475569", fontSize: 13, padding: "4px 8px", cursor: "pointer" }}
-                      onClick={() => onUpdate({ exps: job.exps.filter(x => x.id !== e.id) })}>✕</div>
-                  </div>
-                ))}
-                {job.exps.length > 0 && (
-                  <div style={{ textAlign: "right", fontSize: 12, color: "#f87171", fontWeight: 700, padding: "6px 0 2px", borderTop: "1px solid #1e293b", marginTop: 4 }}>
-                    合計 ${fmt(expTotal)}
-                  </div>
-                )}
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ display: "flex", gap: 5 }}>
-                    <select style={{ ...S.inp, ...S.inpXs, width: 68, flex: "none" }} value={addExp.cat}
-                      onChange={e => setAddExp(p => ({ ...p, cat: e.target.value, amt: "", qty: "", unitPrice: "" }))}>
-                      {CATS.map(c => <option key={c}>{c}</option>)}
-                    </select>
-                    <input style={{ ...S.inp, ...S.inpXs, flex: 1 }} placeholder="說明（選填）" value={addExp.desc}
-                      onChange={e => setAddExp(p => ({ ...p, desc: e.target.value }))} />
-                    {addExp.cat !== "人工" && (
-                      <input style={{ ...S.inp, ...S.inpXs, width: 80, flex: "none" }} placeholder="金額" type="number" inputMode="numeric" value={addExp.amt}
-                        onChange={e => setAddExp(p => ({ ...p, amt: e.target.value }))} />
-                    )}
-                    <div style={{ background: "#3b82f6", color: "#fff", borderRadius: 8, width: 36, height: 36, fontSize: 22, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
-                      onClick={() => {
-                        let amt = addExp.amt;
-                        if (addExp.cat === "人工") { if (!addExp.qty || !addExp.unitPrice) return; amt = String(+addExp.qty * +addExp.unitPrice); }
-                        else { if (!amt) return; }
-                        onUpdate({ exps: [...job.exps, { id: uid(), cat: addExp.cat, desc: addExp.desc, amt, qty: addExp.qty, unitPrice: addExp.unitPrice }] });
-                        setAddExp(p => ({ ...p, desc: "", amt: "", qty: "", unitPrice: "" }));
-                      }}>+</div>
-                  </div>
-                  {addExp.cat === "人工" && (
-                    <div style={{ display: "flex", gap: 5, alignItems: "center", marginTop: 6 }}>
-                      <input style={{ ...S.inp, ...S.inpXs, flex: 1 }} placeholder="人數" type="number" inputMode="numeric" value={addExp.qty}
-                        onChange={e => setAddExp(p => ({ ...p, qty: e.target.value }))} />
-                      <span style={{ color: "#475569", fontSize: 15, flexShrink: 0 }}>×</span>
-                      <input style={{ ...S.inp, ...S.inpXs, flex: 1 }} placeholder="單價 $" type="number" inputMode="numeric" value={addExp.unitPrice}
-                        onChange={e => setAddExp(p => ({ ...p, unitPrice: e.target.value }))} />
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "#34d399", flexShrink: 0, minWidth: 58, textAlign: "right" }}>
-                        = ${fmt(+addExp.qty * +addExp.unitPrice || 0)}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <Lbl t="備註">
-                <textarea style={{ ...S.inp, ...S.inpSm, minHeight: 54 }} placeholder="特殊說明…" value={job.note || ""}
-                  onChange={e => onUpdate({ note: e.target.value })} />
-              </Lbl>
-
-              {del ? (
-                <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 14, padding: "14px", background: "#2d0f0f", borderRadius: 12, border: "1px solid #f8717140" }}>
-                  <span style={{ flex: 1, fontSize: 14, color: "#f87171", fontWeight: 700 }}>確定刪除此工單？</span>
-                  <div style={{ background: "#f87171", color: "#fff", borderRadius: 10, padding: "12px 22px", fontSize: 15, fontWeight: 800, cursor: "pointer" }}
-                    onClick={() => { onDelete(); setDel(false); }}>確定</div>
-                  <div style={{ background: "#334155", color: "#cbd5e1", borderRadius: 10, padding: "12px 16px", fontSize: 15, cursor: "pointer" }}
-                    onClick={() => setDel(false)}>取消</div>
-                </div>
-              ) : (
-                <div style={{ marginTop: 14, background: "#1a0a0a", border: "1px solid #f8717140", borderRadius: 10, padding: "14px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer" }}
-                  onClick={() => setDel(true)}>
-                  <span style={{ fontSize: 16 }}>🗑</span>
-                  <span style={{ color: "#f87171", fontSize: 14, fontWeight: 700 }}>刪除此工單</span>
-                </div>
-              )}
-            </div>
-          )}
         </div>
-      );
-    }
+        <div style={{background:"#3b82f6",color:"#fff",borderRadius:20,padding:"10px 16px",fontSize:14,fontWeight:700,cursor:"pointer"}} onClick={startAdd}>＋ 新工單</div>
+      </div>
 
-    function App() {
-      const [jobs, setJobsState]  = useState([]);
-      const safeJobs = Array.isArray(jobs) ? jobs : [];
-      const [loading, setLoading] = useState(true);
-      const [syncing, setSyncing] = useState(false);
-      const [syncErr, setSyncErr] = useState(null);
-      const [tab, setTab]         = useState("總覽");
-      const [adding, setAdding]   = useState(false);
-      const [draft, setDraft]     = useState(null);
-      const [addExp, setAddExp]   = useState({ cat: "材料", desc: "", amt: "", qty: "", unitPrice: "" });
-      const [filter, setFilter]   = useState("全部");
-      const nameRef = useRef();
-
-      useEffect(() => {
-        apiLoad().then(data => { setJobsState(data); }).catch(e => setSyncErr(e.message)).finally(() => setLoading(false));
-        const t = setInterval(() => apiLoad().then(data => setJobsState(data)).catch(() => {}), 15000);
-        return () => clearInterval(t);
-      }, []);
-
-      function setJobs(fn) {
-        setJobsState(prev => {
-          const next = typeof fn === "function" ? fn(prev) : fn;
-          setSyncing(true); setSyncErr(null);
-          apiSave(next).catch(e => setSyncErr(e.message)).finally(() => setSyncing(false));
-          return next;
-        });
-      }
-
-      function startAdd() {
-        setDraft({ id: uid(), name: "", client: "", date: tod(), quote: "", received: "", status: "待收", exps: [], note: "" });
-        setAdding(true); setTab("工單");
-        setTimeout(() => nameRef.current?.focus(), 80);
-      }
-      function saveJob() {
-        if (!draft.name.trim()) { nameRef.current?.focus(); return; }
-        setJobs(p => [{ ...draft }, ...p]);
-        setAdding(false); setDraft(null);
-      }
-
-      const totalQuote   = safeJobs.reduce((s, j) => s + +j.quote, 0);
-      const totalIn      = safeJobs.reduce((s, j) => s + +j.received, 0);
-      const totalOut     = safeJobs.reduce((s, j) => s + xpTot(j), 0);
-      const totalProfit  = totalIn - totalOut;
-      const totalPending = safeJobs.filter(j => j.status !== "完收").reduce((s, j) => s + Math.max(0, +j.quote - +j.received), 0);
-      const catTotals = useMemo(() => {
-        const m = {}; CATS.forEach(c => { m[c] = 0; });
-        safeJobs.forEach(j => j.exps.forEach(e => { m[e.cat] = (m[e.cat] || 0) + +e.amt; }));
-        return Object.entries(m).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
-      }, [jobs]);
-      const maxCat   = catTotals[0]?.[1] || 1;
-      const filtered = filter === "全部" ? safeJobs : jobs.filter(j => j.status === filter);
-
-      if (loading) return (
-        <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, background: "#0f172a" }}>
-          <div style={{ fontSize: 40 }}>🧹</div>
-          <div style={{ color: "#475569" }}>載入中…</div>
-        </div>
-      );
-
-      return (
-        <div style={S.page}>
-          <div style={S.topbar}>
-            <div>
-              <div style={S.logo}>安潔國際有限公司</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                <div style={S.logoSub}>工程記帳系統</div>
-                {syncErr
-                  ? <div style={{ ...S.sb, background: "#f8717122", color: "#f87171" }}>⚠ 同步失敗</div>
-                  : syncing
-                  ? <div style={{ ...S.sb, background: "#f59e0b22", color: "#f59e0b" }}>⟳ 同步中</div>
-                  : <div style={{ ...S.sb, background: "#34d39922", color: "#34d399" }}>● 已同步</div>
-                }
-              </div>
-            </div>
-            <div style={S.fabBtn} onClick={startAdd}>＋ 新工單</div>
+      {/* Tabs */}
+      <div style={{display:"flex",borderBottom:"1px solid #1e293b",position:"sticky",top:57,background:"#0f172a",zIndex:19}}>
+        {["總覽","工單","統計"].map(t=>(
+          <div key={t} style={{flex:1,color:tab===t?"#38bdf8":"#475569",padding:"12px 0",fontSize:13,fontWeight:tab===t?700:500,cursor:"pointer",textAlign:"center",borderBottom:tab===t?"2px solid #38bdf8":"none"}} onClick={()=>setTab(t)}>
+            {t==="總覽"?"📊":t==="工單"?"📋":"📈"} {t}
           </div>
+        ))}
+      </div>
 
-          <div style={S.tabBar}>
-            {["總覽","工單","統計"].map(t => (
-              <div key={t} style={{ ...S.tabBtn, ...(tab === t ? S.tabA : {}) }} onClick={() => setTab(t)}>
-                {t === "總覽" ? "📊" : t === "工單" ? "📋" : "📈"} {t}
+      {/* 總覽 */}
+      {tab==="總覽"&&(
+        <div style={{padding:"12px 12px 24px"}}>
+          <div style={{background:"linear-gradient(135deg,#1a3a5c,#1e293b)",borderRadius:16,padding:"24px 20px",marginBottom:12,textAlign:"center",border:"1px solid #1e4a7f35"}}>
+            <div style={{fontSize:12,color:"#94a3b8",marginBottom:6}}>本期淨利潤</div>
+            <div style={{fontSize:38,fontWeight:900,color:tP>=0?"#34d399":"#fb923c"}}>{tP>=0?"+":"−"}${fmt(Math.abs(tP))}</div>
+            {tQ>0&&<div style={{fontSize:12,color:"#475569",marginTop:4}}>利潤率 {Math.round(tP/tQ*100)}% · 共 {safeJobs.length} 筆</div>}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:4}}>
+            {[["📝","總報價",tQ,"#cbd5e1"],["✅","已收款",tI,"#34d399"],["💸","總支出",tO,"#f87171"],["⏳","待收款",tPend,"#f59e0b"]].map(([icon,label,val,color])=>(
+              <div key={label} style={{background:"#1e293b",borderRadius:12,padding:"13px 14px"}}>
+                <div style={{fontSize:11,color:"#475569",marginBottom:5}}>{icon} {label}</div>
+                <div style={{fontSize:17,fontWeight:800,color}}>${fmt(val)}</div>
               </div>
             ))}
           </div>
-
-          {tab === "總覽" && (
-            <div style={S.body}>
-              <div style={S.hero}>
-                <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>本期淨利潤</div>
-                <div style={{ fontSize: 38, fontWeight: 900, color: totalProfit >= 0 ? "#34d399" : "#fb923c" }}>
-                  {totalProfit >= 0 ? "+" : "−"}${fmt(Math.abs(totalProfit))}
-                </div>
-                {totalQuote > 0 && <div style={{ fontSize: 12, color: "#475569", marginTop: 4 }}>利潤率 {Math.round(totalProfit / totalQuote * 100)}% · 共 {safeJobs.length} 筆</div>}
-              </div>
-              <div style={S.sg}>
-                {[["📝","總報價",totalQuote,"#cbd5e1"],["✅","已收款",totalIn,"#34d399"],["💸","總支出",totalOut,"#f87171"],["⏳","待收款",totalPending,"#f59e0b"]].map(([icon,label,val,color]) => (
-                  <div key={label} style={{ background: "#1e293b", borderRadius: 12, padding: "13px 14px" }}>
-                    <div style={{ fontSize: 11, color: "#475569", marginBottom: 5 }}>{icon} {label}</div>
-                    <div style={{ fontSize: 17, fontWeight: 800, color }}>${fmt(val)}</div>
-                  </div>
-                ))}
-              </div>
-              <div style={S.secT}>工單狀態</div>
-              {STATUS.map(st => {
-                const cnt = safeJobs.filter(j => j.status === st).length;
-                const amt = safeJobs.filter(j => j.status === st).reduce((s, j) => s + +j.quote, 0);
-                return (
-                  <div key={st} style={{ background: "#1e293b", borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, marginBottom: 7, cursor: "pointer" }}
-                    onClick={() => { setTab("工單"); setFilter(st); }}>
-                    <div style={{ width: 9, height: 9, borderRadius: "50%", background: SC[st], flexShrink: 0 }} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: SC[st] }}>{st}款</div>
-                      <div style={{ fontSize: 11, color: "#475569", marginTop: 1 }}>{cnt} 筆 · ${fmt(amt)}</div>
-                    </div>
-                    <div style={{ fontSize: 18, color: "#334155" }}>›</div>
-                  </div>
-                );
-              })}
-              {safeJobs.length > 0 && (
-                <>
-                  <div style={S.secT}>最近工單</div>
-                  {safeJobs.slice(0, 4).map(job => {
-                    const p = prof(job);
-                    return (
-                      <div key={job.id} style={{ background: "#1e293b", borderRadius: 11, padding: "11px 13px", display: "flex", alignItems: "center", gap: 10, marginBottom: 7, cursor: "pointer" }}
-                        onClick={() => { setTab("工單"); setFilter("全部"); }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: 14, color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{job.name}</div>
-                          <div style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>{job.client}{job.client ? " · " : ""}{job.date}</div>
-                        </div>
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ fontSize: 13, fontWeight: 800, color: p >= 0 ? "#34d399" : "#f87171" }}>{p >= 0 ? "+" : "−"}${fmt(Math.abs(p))}</div>
-                          <span style={{ ...S.badge, background: SC[job.status] + "25", color: SC[job.status], fontSize: 10, display: "inline-block", marginTop: 2 }}>{job.status}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {safeJobs.length > 4 && <div style={{ textAlign: "center", padding: "10px 0", color: "#475569", fontSize: 13, cursor: "pointer" }} onClick={() => setTab("工單")}>查看全部 {safeJobs.length} 筆工單 →</div>}
-                </>
-              )}
-              {safeJobs.length === 0 && (
-                <div style={{ textAlign: "center", padding: "70px 0", color: "#475569" }}>
-                  <div style={{ fontSize: 48, marginBottom: 14 }}>🧹</div>
-                  <div style={{ marginBottom: 20 }}>尚無工單記錄</div>
-                  <div style={S.fabBtn} onClick={startAdd}>＋ 建立第一筆工單</div>
-                </div>
-              )}
+          {safeJobs.length===0&&(
+            <div style={{textAlign:"center",padding:"60px 0",color:"#475569"}}>
+              <div style={{fontSize:48,marginBottom:14}}>🧹</div>
+              <div style={{marginBottom:20}}>尚無工單記錄</div>
+              <div style={{background:"#3b82f6",color:"#fff",borderRadius:20,padding:"13px 32px",fontSize:15,fontWeight:700,cursor:"pointer",display:"inline-block"}} onClick={startAdd}>＋ 建立第一筆工單</div>
             </div>
           )}
+        </div>
+      )}
 
-          {tab === "工單" && (
-            <div style={S.body}>
-              {adding && draft && (
-                <div style={{ background: "#1e293b", borderRadius: 14, padding: "16px 14px", border: "1px solid #334155", marginBottom: 12 }}>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: "#94a3b8", marginBottom: 14 }}>✦ 新增工單</div>
-                  <Lbl t="工程名稱（必填）"><input ref={nameRef} style={S.inp} placeholder="例：台中市仁愛路3樓後細清" value={draft.name} onChange={e => setDraft(p => ({ ...p, name: e.target.value }))} /></Lbl>
-                  <div style={S.row2}>
-                    <Lbl t="客戶名稱"><input style={S.inp} placeholder="業主/工班" value={draft.client} onChange={e => setDraft(p => ({ ...p, client: e.target.value }))} /></Lbl>
-                    <Lbl t="施工日期"><input style={S.inp} type="date" value={draft.date} onChange={e => setDraft(p => ({ ...p, date: e.target.value }))} /></Lbl>
-                  </div>
-                  <div style={S.row2}>
-                    <Lbl t="報價金額 $"><input style={S.inp} placeholder="0" type="number" inputMode="numeric" value={draft.quote} onChange={e => setDraft(p => ({ ...p, quote: e.target.value }))} /></Lbl>
-                    <Lbl t="已收款 $"><input style={S.inp} placeholder="0" type="number" inputMode="numeric" value={draft.received} onChange={e => setDraft(p => ({ ...p, received: e.target.value }))} /></Lbl>
-                  </div>
-                  <Lbl t="收款狀態">
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      {STATUS.map(st => (
-                        <div key={st} style={{ ...S.stBtn, ...(draft.status === st ? { background: SC[st] + "30", color: SC[st], borderColor: SC[st] } : {}) }}
-                          onClick={() => setDraft(p => ({ ...p, status: st }))}>{st}</div>
-                      ))}
-                    </div>
-                  </Lbl>
-                  <Lbl t="備註"><textarea style={{ ...S.inp, minHeight: 60 }} placeholder="特殊說明…" value={draft.note} onChange={e => setDraft(p => ({ ...p, note: e.target.value }))} /></Lbl>
-                  <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                    <div style={S.btnSave} onClick={saveJob}>✓ 儲存工單</div>
-                    <div style={S.btnCancel} onClick={() => { setAdding(false); setDraft(null); }}>取消</div>
-                  </div>
-                </div>
-              )}
-              {!adding && (
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-                  {["全部", ...STATUS].map(f => (
-                    <div key={f} style={{ ...S.fchip, ...(filter === f ? { background: "#3b82f622", color: "#60a5fa", borderColor: "#3b82f6" } : {}) }}
-                      onClick={() => setFilter(f)}>
-                      {f}（{f === "全部" ? jobs.length : safeJobs.filter(j => j.status === f).length}）
-                    </div>
+      {/* 工單 */}
+      {tab==="工單"&&(
+        <div style={{padding:"12px 12px 24px"}}>
+          {adding&&draft&&(
+            <div style={{background:"#1e293b",borderRadius:14,padding:"16px 14px",border:"1px solid #334155",marginBottom:12}}>
+              <div style={{fontSize:14,fontWeight:800,color:"#94a3b8",marginBottom:14}}>✦ 新增工單</div>
+              <FL t="工程名稱（必填）"><input ref={nameRef} style={INP} placeholder="例：台中市後細清" value={draft.name} onChange={e=>setDraft(p=>({...p,name:e.target.value}))}/></FL>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                <FL t="客戶名稱"><input style={INP} placeholder="業主/工班" value={draft.client} onChange={e=>setDraft(p=>({...p,client:e.target.value}))}/></FL>
+                <FL t="施工日期"><input style={INP} type="date" value={draft.date} onChange={e=>setDraft(p=>({...p,date:e.target.value}))}/></FL>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                <FL t="報價 $"><input style={INP} placeholder="0" type="number" inputMode="numeric" value={draft.quote} onChange={e=>setDraft(p=>({...p,quote:e.target.value}))}/></FL>
+                <FL t="已收款 $"><input style={INP} placeholder="0" type="number" inputMode="numeric" value={draft.received} onChange={e=>setDraft(p=>({...p,received:e.target.value}))}/></FL>
+              </div>
+              <FL t="狀態">
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {STATUS.map(st=>(
+                    <div key={st} style={{...STBTN,...(draft.status===st?{background:SC[st]+"30",color:SC[st],borderColor:SC[st]}:{})}} onClick={()=>setDraft(p=>({...p,status:st}))}>{st}</div>
                   ))}
                 </div>
-              )}
-              {(Array.isArray(filtered) ? filtered : []).map(job => (
-                <JobCard key={job.id} job={job} addExp={addExp} setAddExp={setAddExp}
-                  onUpdate={patch => setJobs(p => p.map(j => j.id === job.id ? { ...j, ...patch } : j))}
-                  onDelete={() => setJobs(p => p.filter(j => j.id !== job.id))}
-                />
+              </FL>
+              <div style={{display:"flex",gap:8,marginTop:14}}>
+                <div style={{flex:1,background:"#3b82f6",color:"#fff",borderRadius:10,padding:13,fontWeight:700,fontSize:15,cursor:"pointer",textAlign:"center"}} onClick={saveJob}>✓ 儲存</div>
+                <div style={{background:"transparent",color:"#475569",border:"1px solid #334155",borderRadius:10,padding:"13px 16px",fontSize:14,cursor:"pointer"}} onClick={()=>{setAdding(false);setDraft(null)}}>取消</div>
+              </div>
+            </div>
+          )}
+          {!adding&&(
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+              {["全部",...STATUS].map(f=>(
+                <div key={f} style={{background:"transparent",color:filter===f?"#60a5fa":"#475569",border:`1px solid ${filter===f?"#3b82f6":"#334155"}`,borderRadius:20,padding:"6px 12px",fontSize:12,cursor:"pointer",...(filter===f?{background:"#3b82f622"}:{})}} onClick={()=>setFilter(f)}>
+                  {f}（{f==="全部"?safeJobs.length:safeJobs.filter(j=>j.status===f).length}）
+                </div>
               ))}
-              {(Array.isArray(filtered) ? filtered : []).length === 0 && !adding && (
-                <div style={{ textAlign: "center", padding: "60px 0", color: "#475569" }}>
-                  <div style={{ fontSize: 36, marginBottom: 10 }}>📋</div>沒有符合的工單
+            </div>
+          )}
+          {filtered.map(job=><JobCard key={job.id} job={job} open={open===job.id} onToggle={()=>setOpen(open===job.id?null:job.id)} onUpdate={p=>updateJob(job.id,p)} onDelete={()=>deleteJob(job.id)} addExp={addExp} setAddExp={setAddExp} onAddExp={()=>addExpense(job.id)} onRemoveExp={eid=>removeExp(job.id,eid)}/>)}
+          {filtered.length===0&&!adding&&(
+            <div style={{textAlign:"center",padding:"60px 0",color:"#475569"}}>
+              <div style={{fontSize:36,marginBottom:10}}>📋</div>沒有符合的工單
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 統計 */}
+      {tab==="統計"&&(
+        <div style={{padding:"12px 12px 24px"}}>
+          <div style={{fontSize:10,color:"#475569",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:8,marginTop:8}}>收支總覽</div>
+          <div style={{display:"flex",gap:5,alignItems:"stretch",marginBottom:16}}>
+            {[["總收款",tI,"#34d399"],["總支出",tO,"#f87171"],["淨利潤",tP,tP>=0?"#34d399":"#fb923c"]].map(([l,v,c],i)=>(
+              <div key={l} style={{flex:1,background:"#1e293b",borderRadius:12,padding:"12px 8px",textAlign:"center",...(i===2?{border:`1px solid ${c}30`}:{})}}>
+                <div style={{fontSize:10,color:"#475569",marginBottom:4}}>{l}</div>
+                <div style={{fontSize:17,fontWeight:900,color:c}}>{v<0?"−":""}${fmt(Math.abs(v))}</div>
+              </div>
+            ))}
+          </div>
+          {safeJobs.length>0&&(
+            <>
+              <div style={{fontSize:10,color:"#475569",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:8}}>各工單利潤</div>
+              <div style={{background:"#1e293b",borderRadius:12,overflow:"hidden"}}>
+                <div style={{display:"flex",gap:4,padding:"8px 12px",background:"#0f172a",fontSize:10,color:"#475569",fontWeight:700}}>
+                  <span style={{flex:1}}>工程名稱</span>
+                  <span style={{width:58,textAlign:"right"}}>收款</span>
+                  <span style={{width:58,textAlign:"right"}}>支出</span>
+                  <span style={{width:66,textAlign:"right"}}>利潤</span>
+                </div>
+                {safeJobs.map(job=>{
+                  const e=xp(job),p= +job.received-e;
+                  return(
+                    <div key={job.id} style={{display:"flex",gap:4,padding:"10px 12px",borderTop:"1px solid #0f172a",alignItems:"center"}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{job.name}</div>
+                        <div style={{fontSize:10,color:"#475569"}}>{job.date}</div>
+                      </div>
+                      <span style={{width:58,textAlign:"right",fontSize:12,color:"#34d399"}}>{fmt(+job.received)}</span>
+                      <span style={{width:58,textAlign:"right",fontSize:12,color:"#f87171"}}>{fmt(e)}</span>
+                      <span style={{width:66,textAlign:"right",fontSize:13,fontWeight:800,color:p>=0?"#38bdf8":"#fb923c"}}>{p>=0?"+":"−"}{fmt(Math.abs(p))}</span>
+                    </div>
+                  );
+                })}
+                <div style={{display:"flex",gap:4,padding:"10px 12px",borderTop:"2px solid #334155",background:"#0f172a",alignItems:"center"}}>
+                  <div style={{flex:1,fontSize:13,fontWeight:800,color:"#94a3b8"}}>合計</div>
+                  <span style={{width:58,textAlign:"right",fontSize:13,fontWeight:800,color:"#34d399"}}>{fmt(tI)}</span>
+                  <span style={{width:58,textAlign:"right",fontSize:13,fontWeight:800,color:"#f87171"}}>{fmt(tO)}</span>
+                  <span style={{width:66,textAlign:"right",fontSize:14,fontWeight:900,color:tP>=0?"#38bdf8":"#fb923c"}}>{tP>=0?"+":"−"}{fmt(Math.abs(tP))}</span>
+                </div>
+              </div>
+            </>
+          )}
+          {safeJobs.length===0&&<div style={{textAlign:"center",padding:"60px 0",color:"#475569"}}><div style={{fontSize:40,marginBottom:12}}>📈</div>新增工單後即可查看統計</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function JobCard({job,open,onToggle,onUpdate,onDelete,addExp,setAddExp,onAddExp,onRemoveExp}){
+  const [del,setDel]=useState(false);
+  const exps=job.exps||[];
+  const expTotal=xp(job);
+  const profit= +job.received-expTotal;
+  return(
+    <div style={{background:"#1e293b",borderRadius:14,marginBottom:10,overflow:"hidden"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:14,cursor:"pointer",userSelect:"none"}} onClick={()=>{onToggle();setDel(false)}}>
+        <div style={{flex:1,minWidth:0,marginRight:8}}>
+          <div style={{fontWeight:700,fontSize:15,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{job.name}</div>
+          <div style={{fontSize:12,color:"#475569",marginTop:3}}>{job.client}{job.client?" · ":""}{job.date}</div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+          <span style={{borderRadius:20,padding:"3px 9px",fontSize:11,fontWeight:700,background:SC[job.status]+"28",color:SC[job.status]}}>{job.status}</span>
+          <span style={{borderRadius:20,padding:"3px 9px",fontSize:12,fontWeight:800,color:profit>=0?"#34d399":"#f87171",background:profit>=0?"#34d39918":"#f8717118"}}>{profit>=0?"+":"−"}${fmt(Math.abs(profit))}</span>
+          <span style={{fontSize:22,color:"#475569",lineHeight:1,transition:"transform .2s",display:"inline-block",transform:open?"rotate(90deg)":"none"}}>›</span>
+        </div>
+      </div>
+      {open&&(
+        <div style={{borderTop:"1px solid #0f172a",padding:14}}>
+          <div style={{background:"#0f172a",borderRadius:11,padding:"13px 14px",marginBottom:14}}>
+            {[["報價金額",+job.quote,"#cbd5e1",false],["已收款",+job.received,"#34d399",false],["總支出",expTotal,"#f87171",true]].map(([l,v,c,m])=>(
+              <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0"}}>
+                <span style={{fontSize:12,color:"#64748b"}}>{l}</span>
+                <span style={{fontSize:14,fontWeight:700,color:c}}>{m?"−":""}${fmt(v)}</span>
+              </div>
+            ))}
+            <div style={{height:1,background:"#1e293b",margin:"8px 0"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:13,color:"#94a3b8"}}>淨利潤</span>
+              <span style={{fontSize:20,fontWeight:900,color:profit>=0?"#34d399":"#fb923c"}}>{profit>=0?"+":"−"}${fmt(Math.abs(profit))}</span>
+            </div>
+            {+job.quote>0&&<div style={{textAlign:"right",fontSize:11,color:"#475569",marginTop:3}}>利潤率 {Math.round(profit/ +job.quote*100)}%</div>}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+            <FL t="報價 $"><input style={{...INP,padding:10,fontSize:14}} type="number" inputMode="numeric" value={job.quote} onChange={e=>onUpdate({quote:e.target.value})}/></FL>
+            <FL t="已收款 $"><input style={{...INP,padding:10,fontSize:14}} type="number" inputMode="numeric" value={job.received} onChange={e=>onUpdate({received:e.target.value})}/></FL>
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+            {STATUS.map(st=>(
+              <div key={st} style={{...STBTN,...(job.status===st?{background:SC[st]+"30",color:SC[st],borderColor:SC[st]}:{})}} onClick={()=>onUpdate({status:st})}>{st}</div>
+            ))}
+          </div>
+          <div style={{background:"#0f172a",borderRadius:11,padding:10,marginBottom:12}}>
+            <div style={{fontSize:11,color:"#475569",marginBottom:8,fontWeight:700}}>📌 費用明細</div>
+            {exps.length===0&&<div style={{fontSize:12,color:"#334155",padding:"4px 0 8px"}}>尚無費用記錄</div>}
+            {exps.map(e=>(
+              <div key={e.id} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 0",borderBottom:"1px solid #1e293b"}}>
+                <span style={{fontSize:10,color:"#60a5fa",background:"#60a5fa18",borderRadius:4,padding:"2px 7px",whiteSpace:"nowrap",fontWeight:700}}>{e.cat}</span>
+                <span style={{flex:1,fontSize:12,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.cat==="人工"&&e.qty&&e.unitPrice?`${e.desc?e.desc+"・":""}${e.qty}人×$${fmt(e.unitPrice)}`:e.desc||"—"}</span>
+                <span style={{fontSize:13,fontWeight:800,color:"#fca5a5",whiteSpace:"nowrap"}}>${fmt(e.amt)}</span>
+                <div style={{color:"#475569",fontSize:13,padding:"4px 8px",cursor:"pointer"}} onClick={()=>onRemoveExp(e.id)}>✕</div>
+              </div>
+            ))}
+            {exps.length>0&&<div style={{textAlign:"right",fontSize:12,color:"#f87171",fontWeight:700,padding:"6px 0 2px",borderTop:"1px solid #1e293b",marginTop:4}}>合計 ${fmt(expTotal)}</div>}
+            <div style={{marginTop:10}}>
+              <div style={{display:"flex",gap:5}}>
+                <select style={{...INP,padding:"8px 9px",fontSize:13,width:68,flex:"none"}} value={addExp.cat} onChange={e=>setAddExp(p=>({...p,cat:e.target.value,amt:"",qty:"",unitPrice:""}))}>
+                  {CATS.map(c=><option key={c}>{c}</option>)}
+                </select>
+                <input style={{...INP,padding:"8px 9px",fontSize:13,flex:1}} placeholder="說明（選填）" value={addExp.desc} onChange={e=>setAddExp(p=>({...p,desc:e.target.value}))}/>
+                {addExp.cat!=="人工"&&<input style={{...INP,padding:"8px 9px",fontSize:13,width:80,flex:"none"}} placeholder="金額" type="number" inputMode="numeric" value={addExp.amt} onChange={e=>setAddExp(p=>({...p,amt:e.target.value}))}/>}
+                <div style={{background:"#3b82f6",color:"#fff",borderRadius:8,width:36,height:36,fontSize:22,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0}} onClick={onAddExp}>+</div>
+              </div>
+              {addExp.cat==="人工"&&(
+                <div style={{display:"flex",gap:5,alignItems:"center",marginTop:6}}>
+                  <input style={{...INP,padding:"8px 9px",fontSize:13,flex:1}} placeholder="人數" type="number" inputMode="numeric" value={addExp.qty} onChange={e=>setAddExp(p=>({...p,qty:e.target.value}))}/>
+                  <span style={{color:"#475569",fontSize:15,flexShrink:0}}>×</span>
+                  <input style={{...INP,padding:"8px 9px",fontSize:13,flex:1}} placeholder="單價 $" type="number" inputMode="numeric" value={addExp.unitPrice} onChange={e=>setAddExp(p=>({...p,unitPrice:e.target.value}))}/>
+                  <div style={{fontSize:12,fontWeight:800,color:"#34d399",flexShrink:0,minWidth:58,textAlign:"right"}}>=  ${fmt(+addExp.qty * +addExp.unitPrice||0)}</div>
                 </div>
               )}
             </div>
-          )}
-
-          {tab === "統計" && (
-            <div style={S.body}>
-              <div style={S.secT}>收支總覽</div>
-              <div style={{ display: "flex", gap: 5, alignItems: "stretch", marginBottom: 4 }}>
-                {[["總收款",totalIn,"#34d399"],["總支出",totalOut,"#f87171"],["淨利潤",totalProfit,totalProfit>=0?"#34d399":"#fb923c"]].map(([l,v,c],i) => (
-                  <div key={l} style={{ flex: 1, background: "#1e293b", borderRadius: 12, padding: "12px 8px", textAlign: "center", ...(i===2?{border:`1px solid ${c}30`}:{}) }}>
-                    <div style={{ fontSize: 10, color: "#475569", marginBottom: 4 }}>{l}</div>
-                    <div style={{ fontSize: 17, fontWeight: 900, color: c }}>{v<0?"−":""}${fmt(Math.abs(v))}</div>
-                  </div>
-                ))}
-              </div>
-              {totalQuote > 0 && (
-                <>
-                  <div style={S.secT}>收款進度</div>
-                  <div style={{ background: "#1e293b", borderRadius: 12, padding: "14px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <span style={{ fontSize: 12, color: "#34d399", fontWeight: 700 }}>已收 ${fmt(totalIn)}</span>
-                      <span style={{ fontSize: 12, color: "#475569" }}>目標 ${fmt(totalQuote)}</span>
-                    </div>
-                    <div style={{ height: 9, background: "#0f172a", borderRadius: 9, overflow: "hidden" }}>
-                      <div style={{ height: "100%", width: `${Math.min(100, Math.round(totalIn/totalQuote*100))}%`, background: "linear-gradient(90deg,#34d399,#38bdf8)", borderRadius: 9 }} />
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
-                      <span style={{ fontSize: 11, color: "#475569" }}>{Math.round(totalIn/totalQuote*100)}% 完成</span>
-                      <span style={{ fontSize: 11, color: "#f59e0b" }}>待收 ${fmt(totalPending)}</span>
-                    </div>
-                  </div>
-                </>
-              )}
-              {catTotals.length > 0 && (
-                <>
-                  <div style={S.secT}>支出分類</div>
-                  <div style={{ background: "#1e293b", borderRadius: 12, padding: "14px 14px 4px" }}>
-                    {catTotals.map(([cat, val]) => (
-                      <div key={cat} style={{ marginBottom: 12 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                          <span style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 600 }}>{cat}</span>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: "#fca5a5" }}>${fmt(val)}</span>
-                        </div>
-                        <div style={{ height: 6, background: "#0f172a", borderRadius: 6, overflow: "hidden" }}>
-                          <div style={{ height: "100%", width: `${Math.round(val/maxCat*100)}%`, background: "linear-gradient(90deg,#f87171,#fca5a5)", borderRadius: 6 }} />
-                        </div>
-                        <div style={{ fontSize: 10, color: "#475569", marginTop: 3, textAlign: "right" }}>佔 {totalOut > 0 ? Math.round(val/totalOut*100) : 0}%</div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-              {safeJobs.length > 0 && (
-                <>
-                  <div style={S.secT}>各工單利潤</div>
-                  <div style={{ background: "#1e293b", borderRadius: 12, overflow: "hidden" }}>
-                    <div style={{ display: "flex", gap: 4, padding: "8px 12px", background: "#0f172a", fontSize: 10, color: "#475569", fontWeight: 700 }}>
-                      <span style={{ flex: 1 }}>工程名稱</span>
-                      <span style={{ width: 58, textAlign: "right" }}>收款</span>
-                      <span style={{ width: 58, textAlign: "right" }}>支出</span>
-                      <span style={{ width: 66, textAlign: "right" }}>利潤</span>
-                    </div>
-                    {safeJobs.map(job => {
-                      const e = xpTot(job), p = prof(job);
-                      return (
-                        <div key={job.id} style={{ display: "flex", gap: 4, padding: "10px 12px", borderTop: "1px solid #0f172a", alignItems: "center" }}>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{job.name}</div>
-                            <div style={{ fontSize: 10, color: "#475569" }}>{job.date}</div>
-                          </div>
-                          <span style={{ width: 58, textAlign: "right", fontSize: 12, color: "#34d399" }}>{fmt(+job.received)}</span>
-                          <span style={{ width: 58, textAlign: "right", fontSize: 12, color: "#f87171" }}>{fmt(e)}</span>
-                          <span style={{ width: 66, textAlign: "right", fontSize: 13, fontWeight: 800, color: p >= 0 ? "#38bdf8" : "#fb923c" }}>{p>=0?"+":"−"}{fmt(Math.abs(p))}</span>
-                        </div>
-                      );
-                    })}
-                    <div style={{ display: "flex", gap: 4, padding: "10px 12px", borderTop: "2px solid #334155", background: "#0f172a", alignItems: "center" }}>
-                      <div style={{ flex: 1, fontSize: 13, fontWeight: 800, color: "#94a3b8" }}>合計</div>
-                      <span style={{ width: 58, textAlign: "right", fontSize: 13, fontWeight: 800, color: "#34d399" }}>{fmt(totalIn)}</span>
-                      <span style={{ width: 58, textAlign: "right", fontSize: 13, fontWeight: 800, color: "#f87171" }}>{fmt(totalOut)}</span>
-                      <span style={{ width: 66, textAlign: "right", fontSize: 14, fontWeight: 900, color: totalProfit >= 0 ? "#38bdf8" : "#fb923c" }}>{totalProfit>=0?"+":"−"}{fmt(Math.abs(totalProfit))}</span>
-                    </div>
-                  </div>
-                </>
-              )}
-              {safeJobs.length === 0 && <div style={{ textAlign: "center", padding: "60px 0", color: "#475569" }}><div style={{ fontSize: 40, marginBottom: 12 }}>📈</div>新增工單後即可查看統計</div>}
+          </div>
+          {del?(
+            <div style={{display:"flex",gap:8,alignItems:"center",marginTop:14,padding:14,background:"#2d0f0f",borderRadius:12,border:"1px solid #f8717140"}}>
+              <span style={{flex:1,fontSize:14,color:"#f87171",fontWeight:700}}>確定刪除？</span>
+              <div style={{background:"#f87171",color:"#fff",borderRadius:10,padding:"12px 22px",fontSize:15,fontWeight:800,cursor:"pointer"}} onClick={()=>{onDelete();setDel(false)}}>確定</div>
+              <div style={{background:"#334155",color:"#cbd5e1",borderRadius:10,padding:"12px 16px",fontSize:15,cursor:"pointer"}} onClick={()=>setDel(false)}>取消</div>
+            </div>
+          ):(
+            <div style={{marginTop:14,background:"#1a0a0a",border:"1px solid #f8717140",borderRadius:10,padding:14,display:"flex",alignItems:"center",justifyContent:"center",gap:8,cursor:"pointer"}} onClick={()=>setDel(true)}>
+              <span style={{fontSize:16}}>🗑</span>
+              <span style={{color:"#f87171",fontSize:14,fontWeight:700}}>刪除此工單</span>
             </div>
           )}
         </div>
-      );
-    }
+      )}
+    </div>
+  );
+}
 
-    function Pr({ label, val, c, minus }) {
-      return (
-        <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0" }}>
-          <span style={{ fontSize: 12, color: "#64748b" }}>{label}</span>
-          <span style={{ fontSize: 14, fontWeight: 700, color: c }}>{minus ? "−" : ""}${fmt(val)}</span>
-        </div>
-      );
-    }
-    function Lbl({ t, children }) {
-      return <div style={{ marginBottom: 10 }}><div style={{ fontSize: 11, color: "#64748b", marginBottom: 5 }}>{t}</div>{children}</div>;
-    }
+function FL({t,children}){return <div style={{marginBottom:10}}><div style={{fontSize:11,color:"#64748b",marginBottom:5}}>{t}</div>{children}</div>}
+const INP={background:"#0f172a",border:"1px solid #1e293b",borderRadius:9,padding:"11px 12px",color:"#e2e8f0",fontSize:15,width:"100%",display:"block"};
+const STBTN={background:"transparent",color:"#475569",border:"1px solid #334155",borderRadius:20,padding:"7px 16px",fontSize:13,cursor:"pointer",display:"inline-block"};
 
-    const S = {
-      page:     { minHeight: "100dvh", background: "#0f172a", color: "#e2e8f0", paddingBottom: 40, maxWidth: 480, margin: "0 auto" },
-      topbar:   { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px 12px", borderBottom: "1px solid #1e293b", position: "sticky", top: 0, background: "#0f172a", zIndex: 20 },
-      logo:     { fontSize: 15, fontWeight: 900, color: "#f1f5f9" },
-      logoSub:  { fontSize: 10, color: "#475569" },
-      sb:       { fontSize: 10, borderRadius: 20, padding: "2px 7px", fontWeight: 600 },
-      fabBtn:   { background: "#3b82f6", color: "#fff", borderRadius: 20, padding: "10px 16px", fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", display: "inline-block" },
-      tabBar:   { display: "flex", borderBottom: "1px solid #1e293b", position: "sticky", top: 57, background: "#0f172a", zIndex: 19 },
-      tabBtn:   { flex: 1, background: "none", border: "none", color: "#475569", padding: "12px 0", fontSize: 13, fontWeight: 500, cursor: "pointer", textAlign: "center" },
-      tabA:     { color: "#38bdf8", borderBottom: "2px solid #38bdf8", fontWeight: 700 },
-      body:     { padding: "12px 12px 24px" },
-      secT:     { fontSize: 10, color: "#475569", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8, marginTop: 16 },
-      hero:     { background: "linear-gradient(135deg,#1a3a5c,#1e293b)", borderRadius: 16, padding: "24px 20px", marginBottom: 12, textAlign: "center", border: "1px solid #1e4a7f35" },
-      sg:       { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 4 },
-      card:     { background: "#1e293b", borderRadius: 14, marginBottom: 10, overflow: "hidden" },
-      cardHead: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px", cursor: "pointer", userSelect: "none" },
-      cardL:    { flex: 1, minWidth: 0, marginRight: 8 },
-      cardName: { fontWeight: 700, fontSize: 15, color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-      cardMeta: { fontSize: 12, color: "#475569", marginTop: 3 },
-      cardR:    { display: "flex", alignItems: "center", gap: 6, flexShrink: 0 },
-      badge:    { borderRadius: 20, padding: "3px 9px", fontSize: 11, fontWeight: 700 },
-      pchip:    { borderRadius: 20, padding: "3px 9px", fontSize: 12, fontWeight: 800 },
-      chev:     { fontSize: 22, color: "#475569", lineHeight: 1, transition: "transform .2s", display: "inline-block" },
-      cardBody: { borderTop: "1px solid #0f172a", padding: "14px" },
-      pbox:     { background: "#0f172a", borderRadius: 11, padding: "13px 14px", marginBottom: 14 },
-      row2:     { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 },
-      stBtn:    { background: "transparent", color: "#475569", border: "1px solid #334155", borderRadius: 20, padding: "7px 16px", fontSize: 13, cursor: "pointer", display: "inline-block" },
-      expSec:   { background: "#0f172a", borderRadius: 11, padding: "10px", marginBottom: 12 },
-      expHdr:   { fontSize: 11, color: "#475569", marginBottom: 8, fontWeight: 700 },
-      expLine:  { display: "flex", alignItems: "center", gap: 6, padding: "7px 0", borderBottom: "1px solid #1e293b" },
-      expCat:   { fontSize: 10, color: "#60a5fa", background: "#60a5fa18", borderRadius: 4, padding: "2px 7px", whiteSpace: "nowrap", fontWeight: 700 },
-      expDesc:  { flex: 1, fontSize: 12, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-      expAmt:   { fontSize: 13, fontWeight: 800, color: "#fca5a5", whiteSpace: "nowrap" },
-      inp:      { background: "#0f172a", border: "1px solid #1e293b", borderRadius: 9, padding: "11px 12px", color: "#e2e8f0", fontSize: 15, width: "100%", display: "block" },
-      inpSm:    { padding: "10px", fontSize: 14 },
-      inpXs:    { padding: "8px 9px", fontSize: 13 },
-      btnSave:  { flex: 1, background: "#3b82f6", color: "#fff", borderRadius: 10, padding: "13px", fontWeight: 700, fontSize: 15, cursor: "pointer", textAlign: "center" },
-      btnCancel:{ background: "transparent", color: "#475569", border: "1px solid #334155", borderRadius: 10, padding: "13px 16px", fontSize: 14, cursor: "pointer" },
-      fchip:    { background: "transparent", color: "#475569", border: "1px solid #334155", borderRadius: 20, padding: "6px 12px", fontSize: 12, cursor: "pointer" },
-    };
-
-    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
-  </script>
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
 </body>
 </html>
