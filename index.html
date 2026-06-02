@@ -185,6 +185,7 @@
 
     function App() {
       const [jobs, setJobsState]  = useState([]);
+      const safeJobs = Array.isArray(jobs) ? jobs : [];
       const [loading, setLoading] = useState(true);
       const [syncing, setSyncing] = useState(false);
       const [syncErr, setSyncErr] = useState(null);
@@ -221,18 +222,18 @@
         setAdding(false); setDraft(null);
       }
 
-      const totalQuote   = jobs.reduce((s, j) => s + +j.quote, 0);
-      const totalIn      = jobs.reduce((s, j) => s + +j.received, 0);
-      const totalOut     = jobs.reduce((s, j) => s + xpTot(j), 0);
+      const totalQuote   = safeJobs.reduce((s, j) => s + +j.quote, 0);
+      const totalIn      = safeJobs.reduce((s, j) => s + +j.received, 0);
+      const totalOut     = safeJobs.reduce((s, j) => s + xpTot(j), 0);
       const totalProfit  = totalIn - totalOut;
-      const totalPending = jobs.filter(j => j.status !== "完收").reduce((s, j) => s + Math.max(0, +j.quote - +j.received), 0);
+      const totalPending = safeJobs.filter(j => j.status !== "完收").reduce((s, j) => s + Math.max(0, +j.quote - +j.received), 0);
       const catTotals = useMemo(() => {
         const m = {}; CATS.forEach(c => { m[c] = 0; });
-        jobs.forEach(j => j.exps.forEach(e => { m[e.cat] = (m[e.cat] || 0) + +e.amt; }));
+        safeJobs.forEach(j => j.exps.forEach(e => { m[e.cat] = (m[e.cat] || 0) + +e.amt; }));
         return Object.entries(m).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
       }, [jobs]);
       const maxCat   = catTotals[0]?.[1] || 1;
-      const filtered = filter === "全部" ? jobs : jobs.filter(j => j.status === filter);
+      const filtered = filter === "全部" ? safeJobs : jobs.filter(j => j.status === filter);
 
       if (loading) return (
         <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, background: "#0f172a" }}>
@@ -274,7 +275,7 @@
                 <div style={{ fontSize: 38, fontWeight: 900, color: totalProfit >= 0 ? "#34d399" : "#fb923c" }}>
                   {totalProfit >= 0 ? "+" : "−"}${fmt(Math.abs(totalProfit))}
                 </div>
-                {totalQuote > 0 && <div style={{ fontSize: 12, color: "#475569", marginTop: 4 }}>利潤率 {Math.round(totalProfit / totalQuote * 100)}% · 共 {jobs.length} 筆</div>}
+                {totalQuote > 0 && <div style={{ fontSize: 12, color: "#475569", marginTop: 4 }}>利潤率 {Math.round(totalProfit / totalQuote * 100)}% · 共 {safeJobs.length} 筆</div>}
               </div>
               <div style={S.sg}>
                 {[["📝","總報價",totalQuote,"#cbd5e1"],["✅","已收款",totalIn,"#34d399"],["💸","總支出",totalOut,"#f87171"],["⏳","待收款",totalPending,"#f59e0b"]].map(([icon,label,val,color]) => (
@@ -286,8 +287,8 @@
               </div>
               <div style={S.secT}>工單狀態</div>
               {STATUS.map(st => {
-                const cnt = jobs.filter(j => j.status === st).length;
-                const amt = jobs.filter(j => j.status === st).reduce((s, j) => s + +j.quote, 0);
+                const cnt = safeJobs.filter(j => j.status === st).length;
+                const amt = safeJobs.filter(j => j.status === st).reduce((s, j) => s + +j.quote, 0);
                 return (
                   <div key={st} style={{ background: "#1e293b", borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, marginBottom: 7, cursor: "pointer" }}
                     onClick={() => { setTab("工單"); setFilter(st); }}>
@@ -300,10 +301,10 @@
                   </div>
                 );
               })}
-              {jobs.length > 0 && (
+              {safeJobs.length > 0 && (
                 <>
                   <div style={S.secT}>最近工單</div>
-                  {jobs.slice(0, 4).map(job => {
+                  {safeJobs.slice(0, 4).map(job => {
                     const p = prof(job);
                     return (
                       <div key={job.id} style={{ background: "#1e293b", borderRadius: 11, padding: "11px 13px", display: "flex", alignItems: "center", gap: 10, marginBottom: 7, cursor: "pointer" }}
@@ -319,10 +320,10 @@
                       </div>
                     );
                   })}
-                  {jobs.length > 4 && <div style={{ textAlign: "center", padding: "10px 0", color: "#475569", fontSize: 13, cursor: "pointer" }} onClick={() => setTab("工單")}>查看全部 {jobs.length} 筆工單 →</div>}
+                  {safeJobs.length > 4 && <div style={{ textAlign: "center", padding: "10px 0", color: "#475569", fontSize: 13, cursor: "pointer" }} onClick={() => setTab("工單")}>查看全部 {safeJobs.length} 筆工單 →</div>}
                 </>
               )}
-              {jobs.length === 0 && (
+              {safeJobs.length === 0 && (
                 <div style={{ textAlign: "center", padding: "70px 0", color: "#475569" }}>
                   <div style={{ fontSize: 48, marginBottom: 14 }}>🧹</div>
                   <div style={{ marginBottom: 20 }}>尚無工單記錄</div>
@@ -366,18 +367,18 @@
                   {["全部", ...STATUS].map(f => (
                     <div key={f} style={{ ...S.fchip, ...(filter === f ? { background: "#3b82f622", color: "#60a5fa", borderColor: "#3b82f6" } : {}) }}
                       onClick={() => setFilter(f)}>
-                      {f}（{f === "全部" ? jobs.length : jobs.filter(j => j.status === f).length}）
+                      {f}（{f === "全部" ? jobs.length : safeJobs.filter(j => j.status === f).length}）
                     </div>
                   ))}
                 </div>
               )}
-              {filtered.map(job => (
+              {(Array.isArray(filtered) ? filtered : []).map(job => (
                 <JobCard key={job.id} job={job} addExp={addExp} setAddExp={setAddExp}
                   onUpdate={patch => setJobs(p => p.map(j => j.id === job.id ? { ...j, ...patch } : j))}
                   onDelete={() => setJobs(p => p.filter(j => j.id !== job.id))}
                 />
               ))}
-              {filtered.length === 0 && !adding && (
+              {(Array.isArray(filtered) ? filtered : []).length === 0 && !adding && (
                 <div style={{ textAlign: "center", padding: "60px 0", color: "#475569" }}>
                   <div style={{ fontSize: 36, marginBottom: 10 }}>📋</div>沒有符合的工單
                 </div>
@@ -433,7 +434,7 @@
                   </div>
                 </>
               )}
-              {jobs.length > 0 && (
+              {safeJobs.length > 0 && (
                 <>
                   <div style={S.secT}>各工單利潤</div>
                   <div style={{ background: "#1e293b", borderRadius: 12, overflow: "hidden" }}>
@@ -443,7 +444,7 @@
                       <span style={{ width: 58, textAlign: "right" }}>支出</span>
                       <span style={{ width: 66, textAlign: "right" }}>利潤</span>
                     </div>
-                    {jobs.map(job => {
+                    {safeJobs.map(job => {
                       const e = xpTot(job), p = prof(job);
                       return (
                         <div key={job.id} style={{ display: "flex", gap: 4, padding: "10px 12px", borderTop: "1px solid #0f172a", alignItems: "center" }}>
@@ -466,7 +467,7 @@
                   </div>
                 </>
               )}
-              {jobs.length === 0 && <div style={{ textAlign: "center", padding: "60px 0", color: "#475569" }}><div style={{ fontSize: 40, marginBottom: 12 }}>📈</div>新增工單後即可查看統計</div>}
+              {safeJobs.length === 0 && <div style={{ textAlign: "center", padding: "60px 0", color: "#475569" }}><div style={{ fontSize: 40, marginBottom: 12 }}>📈</div>新增工單後即可查看統計</div>}
             </div>
           )}
         </div>
